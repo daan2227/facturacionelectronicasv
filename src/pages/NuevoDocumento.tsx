@@ -8,7 +8,8 @@ import ItemsForm from '../components/ItemsForm'
 import TotalesSummary from '../components/TotalesSummary'
 import InvoicePDF from '../components/InvoicePDF'
 import { useInvoiceStore } from '../store/invoiceStore'
-import { supabase } from '../lib/supabase'
+import { useEmpresaStore } from '../store/empresaStore'
+import { saveDocumento, nextNumeroControl } from '../lib/storage'
 import type { DTEPayload } from '../types/invoice'
 
 const STEPS = ['Documento', 'Cliente', 'Ítems', 'Resumen']
@@ -17,16 +18,18 @@ export default function NuevoDocumento() {
   const [step, setStep] = useState(0)
   const [loading, setLoading] = useState(false)
   const { draft, resetDraft } = useInvoiceStore()
+  const empresa = useEmpresaStore((s) => s.empresa!)
   const navigate = useNavigate()
 
   const buildDTE = (): DTEPayload => {
     const now = new Date()
+    const numeroControl = nextNumeroControl(draft.tipoDte)
     return {
       identificacion: {
         version: 3,
         ambiente: '00',
         tipoDte: draft.tipoDte,
-        numeroControl: `DTE-${draft.tipoDte}-C0010000-${String(Date.now()).slice(-12)}`,
+        numeroControl,
         codigoGeneracion: draft.codigoGeneracion,
         tipoModelo: 1,
         tipoOperacion: 1,
@@ -35,16 +38,20 @@ export default function NuevoDocumento() {
         tipoMoneda: 'USD',
       },
       emisor: {
-        nit: '00000000000000',
-        nrc: '0000000-0',
-        nombre: 'Mi Empresa S.A. de C.V.',
-        codActividad: '4711',
-        descActividad: 'Venta al por menor',
-        nombreComercial: 'Mi Empresa',
-        tipoEstablecimiento: '01',
-        direccion: { departamento: '06', municipio: '14', complemento: 'San Salvador' },
-        telefono: '0000-0000',
-        correo: 'facturacion@miempresa.com',
+        nit: empresa.nit,
+        nrc: empresa.nrc,
+        nombre: empresa.nombre,
+        codActividad: empresa.codActividad || '0000',
+        descActividad: empresa.descActividad || empresa.giroComercial,
+        nombreComercial: empresa.nombreComercial || empresa.nombre,
+        tipoEstablecimiento: empresa.tipoEstablecimiento,
+        direccion: {
+          departamento: empresa.departamento,
+          municipio: empresa.municipio,
+          complemento: empresa.direccion,
+        },
+        telefono: empresa.telefono,
+        correo: empresa.correo,
       },
       receptor: draft.receptor!,
       cuerpoDocumento: draft.items,
@@ -63,35 +70,29 @@ export default function NuevoDocumento() {
     try {
       const dte = buildDTE()
 
-      // Generate PDF blob
+      // Guardar en localStorage
+      saveDocumento({
+        tipoDte: dte.identificacion.tipoDte,
+        numeroControl: dte.identificacion.numeroControl,
+        codigoGeneracion: dte.identificacion.codigoGeneracion,
+        selloRecepcion: null,
+        estado: 'emitido',
+        fechaEmision: dte.identificacion.fecEmi,
+        horaEmision: dte.identificacion.horEmi,
+        condicionOperacion: draft.condicionOperacion,
+        receptor: draft.receptor?.nombre ?? '',
+        totalGravada: draft.totals.totalGravada,
+        totalExenta: draft.totals.totalExenta,
+        totalNoSuj: draft.totals.totalNoSuj,
+        iva: draft.totals.iva,
+        retencion1pct: draft.totals.retencion1,
+        totalPagar: draft.totals.totalPagar,
+        totalLetras: draft.totals.totalLetras,
+        jsonDte: dte,
+      })
+
+      // Generar y descargar PDF
       const blob = await pdf(<InvoicePDF dte={dte} />).toBlob()
-
-      // Save to Supabase
-      const { data: empresa } = await supabase.from('empresas').select('id').single()
-      if (empresa) {
-        await supabase.from('documentos').insert({
-          empresa_id: empresa.id,
-          cliente_id: null,
-          tipo_dte: dte.identificacion.tipoDte,
-          numero_control: dte.identificacion.numeroControl,
-          codigo_generacion: dte.identificacion.codigoGeneracion,
-          estado: 'emitido',
-          ambiente: '00',
-          fecha_emision: dte.identificacion.fecEmi,
-          hora_emision: dte.identificacion.horEmi,
-          condicion_operacion: draft.condicionOperacion,
-          total_gravada: draft.totals.totalGravada,
-          total_exenta: draft.totals.totalExenta,
-          total_no_suj: draft.totals.totalNoSuj,
-          iva: draft.totals.iva,
-          retencion_1pct: draft.totals.retencion1,
-          total_pagar: draft.totals.totalPagar,
-          total_letras: draft.totals.totalLetras,
-          json_dte: dte as unknown as Record<string, unknown>,
-        })
-      }
-
-      // Download PDF
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -108,7 +109,7 @@ export default function NuevoDocumento() {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Step indicator */}
+      {/* Barra de progreso */}
       <div className="flex gap-1">
         {STEPS.map((label, i) => (
           <div key={label} className="flex-1 flex flex-col items-center gap-0.5">
@@ -120,7 +121,6 @@ export default function NuevoDocumento() {
         ))}
       </div>
 
-      {/* Steps */}
       {step === 0 && <TipoDteSelector onNext={() => setStep(1)} />}
       {step === 1 && <ReceptorForm onNext={() => setStep(2)} />}
       {step === 2 && <ItemsForm onNext={() => setStep(3)} onBack={() => setStep(1)} />}
@@ -129,12 +129,8 @@ export default function NuevoDocumento() {
           <TotalesSummary />
           <div className="flex gap-3">
             <button onClick={() => setStep(2)} className="flex-1 border border-gray-300 rounded-xl py-2 text-sm">← Atrás</button>
-            <button
-              onClick={handleEmitir}
-              disabled={loading}
-              className="flex-1 btn-primary bg-green-600"
-            >
-              {loading ? 'Generando PDF...' : '✅ Emitir y Descargar'}
+            <button onClick={handleEmitir} disabled={loading} className="flex-1 btn-primary bg-green-600">
+              {loading ? 'Generando PDF...' : '✅ Emitir'}
             </button>
           </div>
         </div>

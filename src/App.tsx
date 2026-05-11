@@ -1,16 +1,20 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useAuthStore } from './store/authStore'
+import { useEmpresaStore } from './store/empresaStore'
 import Layout from './components/Layout'
-import LoginPage from './pages/LoginPage'
+import SetupEmpresa from './pages/SetupEmpresa'
 import Dashboard from './pages/Dashboard'
 import NuevoDocumento from './pages/NuevoDocumento'
 import Historial from './pages/Historial'
 import Clientes from './pages/Clientes'
+import Ajustes from './pages/Ajustes'
 
 export default function App() {
-  const user = useAuthStore((s) => s.user)
+  const { empresa, load } = useEmpresaStore()
 
-  if (!user) return <LoginPage />
+  useEffect(() => { load() }, [load])
+
+  if (!empresa) return <SetupEmpresa />
 
   return (
     <BrowserRouter>
@@ -20,6 +24,7 @@ export default function App() {
           <Route path="nuevo" element={<NuevoDocumento />} />
           <Route path="historial" element={<Historial />} />
           <Route path="clientes" element={<Clientes />} />
+          <Route path="ajustes" element={<Ajustes />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

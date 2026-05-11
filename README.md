@@ -1,104 +1,88 @@
 # FacturaSV — Documentos Tributarios Electrónicos
 
-MVP de generación de facturas electrónicas para El Salvador, preparado para integración con la API REST del Ministerio de Hacienda.
+MVP de generación de facturas electrónicas para El Salvador.
+**Sin backend. Sin servidor. Sin cuenta.** Todo se guarda en el navegador.
 
 ## Stack
 
 - **Frontend**: React 18 + Vite + TypeScript
 - **UI**: Tailwind CSS (mobile-first)
-- **Backend/Auth/DB**: Supabase (PostgreSQL + RLS)
-- **PDF**: @react-pdf/renderer (generación en cliente)
+- **Almacenamiento**: `localStorage` del navegador
+- **PDF**: @react-pdf/renderer (generación 100% en cliente)
 - **Estado**: Zustand
-- **Validación**: Zod + lógica propia NIT/DUI
+- **Validación**: lógica propia NIT/DUI
 
-## Configuración inicial
+## Instalación
 
-### 1. Clonar y dependencias
 ```bash
 git clone https://github.com/daan2227/facturacionelectronicasv
 cd facturacionelectronicasv
 npm install
-```
-
-### 2. Variables de entorno
-```bash
-cp .env.example .env
-# Editar .env con tus credenciales de Supabase
-```
-
-### 3. Base de datos (Supabase)
-1. Crear proyecto en [supabase.com](https://supabase.com)
-2. Ir a **SQL Editor** y ejecutar `supabase/migrations/001_initial_schema.sql`
-3. Copiar `Project URL` y `anon public key` a tu `.env`
-
-### 4. Iniciar en desarrollo
-```bash
 npm run dev
 ```
 
-## Flujo de emisión (< 1 minuto en móvil)
+No se necesita `.env`. No hay credenciales que configurar.
+
+## Flujo (< 1 minuto en móvil)
 
 ```
-1. Seleccionar tipo de documento (Factura / Crédito Fiscal)
-2. Buscar o ingresar datos del cliente (NIT/NRC validado)
-3. Agregar ítems con precio — IVA y retención calculados automáticamente
-4. Revisar resumen y tocar "Emitir" — PDF descargado instantáneamente
+1. Primera vez: configurar datos de la empresa (NIT, NRC, giro, etc.)
+2. Tocar "+ Nueva Factura"
+3. Seleccionar tipo de documento
+4. Ingresar datos del cliente (NIT/DUI validado)
+5. Agregar ítems — IVA y retención calculados automáticamente
+6. Tocar "Emitir" — PDF descargado al instante
 ```
 
 ## Cálculo de impuestos
 
 | Concepto | Fórmula |
 |---|---|
-| IVA (13%) | `ventaGravada × 0.13` |
+| IVA 13% | `ventaGravada × 0.13` |
 | Retención 1% | `ventaGravada × 0.01` (solo Grandes Contribuyentes) |
-| Total a pagar | `subtotal + IVA − retención1%` |
+| Total a pagar | `subtotal + IVA − retención` |
+| Total en letras | Conversión automática requerida por Hacienda |
 
-## Tipos de DTE soportados
+## Almacenamiento local
 
-| Código | Nombre |
+| Clave | Contenido |
 |---|---|
-| 01 | Factura Consumidor Final |
-| 03 | Crédito Fiscal |
-| 05 | Nota de Crédito |
-| 06 | Nota de Débito |
+| `fsv_empresa` | Datos fiscales de la empresa |
+| `fsv_clientes` | Directorio de clientes |
+| `fsv_documentos` | Historial de DTEs emitidos |
 
-## Preparado para API Hacienda
+## Respaldo de datos
 
-El objeto `DTEPayload` en `src/types/invoice.ts` sigue la estructura JSON del esquema oficial del MH. Para conectar la API REST:
+En **Ajustes** puede exportar un `.json` con todos sus datos e importarlo en otro dispositivo.
 
-1. Configurar credenciales MH en variables de entorno
-2. Crear `src/services/haciendaApi.ts` con el endpoint de recepciFn de DTE
-3. Llamar desde `NuevoDocumento.tsx` después de generar el PDF
-4. Guardar el `selloRecepcion` devuelto en la tabla `documentos`
+## Preparado para API de Hacienda
 
-## Estructura del proyecto
+El objeto `DTEPayload` en `src/types/invoice.ts` sigue el esquema JSON oficial del MH.
+Cuando quiera conectar la API REST:
+
+1. Crear `src/services/haciendaApi.ts`
+2. Llamar el endpoint de recepción desde `NuevoDocumento.tsx` después de generar el PDF
+3. Guardar el `selloRecepcion` en el documento local
+
+## Estructura
 
 ```
 src/
-  components/     # UI reutilizable
-    Layout.tsx
-    TipoDteSelector.tsx
-    ReceptorForm.tsx      # Validación NIT/DUI/NRC
+  lib/storage.ts          ← motor de datos (localStorage)
+  store/
+    empresaStore.ts       ← reemplaza auth — no hay login
+    invoiceStore.ts       ← borrador de factura en curso
+  utils/taxUtils.ts       ← IVA, retención, montoToLetras, validarNIT
+  components/
+    InvoicePDF.tsx        ← PDF generado en el navegador
+    ReceptorForm.tsx
     ItemsForm.tsx
     TotalesSummary.tsx
-    InvoicePDF.tsx        # Renderizador PDF
   pages/
-    LoginPage.tsx
+    SetupEmpresa.tsx      ← primera vez (reemplaza login)
     Dashboard.tsx
-    NuevoDocumento.tsx    # Flujo de 4 pasos
+    NuevoDocumento.tsx    ← flujo 4 pasos
     Historial.tsx
     Clientes.tsx
-  store/
-    authStore.ts          # Supabase Auth
-    invoiceStore.ts       # Estado del borrador
-  utils/
-    taxUtils.ts           # IVA, retención, montoToLetras, validarNIT
-  types/
-    invoice.ts            # DTEPayload, LineItem, Receptor...
-    database.ts           # Tipos Supabase
-  lib/
-    supabase.ts
-supabase/
-  migrations/
-    001_initial_schema.sql  # Tablas + RLS + función correlativo
+    Ajustes.tsx           ← backup / restaurar / resetear
 ```
