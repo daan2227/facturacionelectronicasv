@@ -22,11 +22,15 @@ export default function Historial() {
   const [sharing, setSharing] = useState<{ doc: DocumentoData; blob: Blob } | null>(null)
   const [generatingId, setGeneratingId] = useState<string | null>(null)
 
-  const filtered = useMemo(() => {
-    return docs
+  const filtered = useMemo(() =>
+    docs
       .filter((d) => filter === 'todos' || d.estado === filter)
-      .filter((d) => !search || d.receptor.toLowerCase().includes(search.toLowerCase()) || d.numeroControl.includes(search))
-  }, [docs, search, filter])
+      .filter((d) => !search ||
+        d.receptor.toLowerCase().includes(search.toLowerCase()) ||
+        d.numeroControl.includes(search)
+      ),
+    [docs, search, filter]
+  )
 
   const handleShare = async (doc: DocumentoData) => {
     if (!doc.jsonDte) return
@@ -50,22 +54,15 @@ export default function Historial() {
       <div className="flex flex-col gap-4">
         <h1 className="text-xl font-bold text-gray-900">Historial</h1>
 
-        <input
-          className="input-field"
-          placeholder="Buscar por cliente o número de control..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <input className="input-field" placeholder="Buscar por cliente o número…"
+          value={search} onChange={(e) => setSearch(e.target.value)} />
 
         <div className="flex gap-2">
           {(['todos', 'emitido', 'anulado'] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+            <button key={f} onClick={() => setFilter(f)}
+              className={`px-3 py-1 rounded-full text-xs font-medium ${
                 filter === f ? 'bg-sv-blue text-white' : 'bg-gray-100 text-gray-600'
-              }`}
-            >
+              }`}>
               {f.charAt(0).toUpperCase() + f.slice(1)}
             </button>
           ))}
@@ -73,8 +70,7 @@ export default function Historial() {
 
         {filtered.length === 0 && (
           <div className="text-center py-10 text-gray-400">
-            <p className="text-4xl mb-2">📄</p>
-            <p>No hay documentos</p>
+            <p className="text-4xl mb-2">📄</p><p>No hay documentos</p>
           </div>
         )}
 
@@ -90,7 +86,7 @@ export default function Historial() {
               <p className="font-bold text-gray-800">${doc.totalPagar.toFixed(2)}</p>
             </div>
 
-            <p className="text-sm text-gray-700 font-medium">{doc.receptor}</p>
+            <p className="text-sm font-medium text-gray-700">{doc.receptor}</p>
             <p className="text-xs text-gray-400 font-mono">{doc.numeroControl}</p>
             <p className="text-xs text-gray-400">
               {doc.fechaEmision ? format(new Date(doc.fechaEmision), 'dd/MM/yyyy') : ''} • {doc.horaEmision}
@@ -103,27 +99,18 @@ export default function Historial() {
             )}
 
             <div className="flex gap-2 mt-1">
-              {/* Botón compartir */}
               {doc.jsonDte && doc.estado !== 'anulado' && (
                 <button
                   onClick={() => handleShare(doc)}
                   disabled={generatingId === doc.id}
-                  className="flex-1 bg-sv-blue text-white text-xs rounded-xl py-2 font-medium flex items-center justify-center gap-1"
+                  className="flex-1 bg-sv-blue text-white text-xs rounded-xl py-2 font-medium flex items-center justify-center gap-1 disabled:opacity-60"
                 >
-                  {generatingId === doc.id ? (
-                    <span>Preparando…</span>
-                  ) : (
-                    <><span>📤</span> Compartir / Enviar</>
-                  )}
+                  {generatingId === doc.id ? 'Preparando…' : <>📤 Compartir / Ver PDF</>}
                 </button>
               )}
-
-              {/* Anular */}
               {doc.estado === 'emitido' && (
-                <button
-                  onClick={() => handleAnular(doc.id)}
-                  className="text-xs border border-red-300 text-red-500 rounded-xl px-3 py-2"
-                >
+                <button onClick={() => handleAnular(doc.id)}
+                  className="text-xs border border-red-300 text-red-500 rounded-xl px-3 py-2">
                   Anular
                 </button>
               )}
@@ -132,7 +119,6 @@ export default function Historial() {
         ))}
       </div>
 
-      {/* Panel de compartir desde historial */}
       {sharing && (
         <ShareSheet
           blob={sharing.blob}
@@ -141,6 +127,7 @@ export default function Historial() {
           total={sharing.doc.totalPagar}
           tipoDte={sharing.doc.tipoDte}
           numeroControl={sharing.doc.numeroControl}
+          jsonDte={sharing.doc.jsonDte}
           onClose={() => setSharing(null)}
         />
       )}

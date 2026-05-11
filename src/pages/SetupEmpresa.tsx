@@ -18,18 +18,20 @@ export default function SetupEmpresa() {
     nit: '', nrc: '', nombre: '', nombreComercial: '',
     giroComercial: '', codActividad: '', descActividad: '',
     tipoEstablecimiento: '01', departamento: '06', municipio: '14',
-    direccion: '', telefono: '', correo: '', esGranContribuyente: false,
+    direccion: '', telefono: '', correo: '',
+    esGranContribuyente: false,
+    ambiente: '00' as '00' | '01',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const validate = () => {
     const e: Record<string, string> = {}
-    if (!form.nombre.trim()) e.nombre = 'Requerido'
-    if (!form.nit.trim()) e.nit = 'Requerido'
+    if (!form.nombre.trim())        e.nombre = 'Requerido'
+    if (!form.nit.trim())           e.nit = 'Requerido'
     else if (!validarNIT(form.nit)) e.nit = 'NIT inválido (14 dígitos)'
-    if (!form.nrc.trim()) e.nrc = 'Requerido'
+    if (!form.nrc.trim())           e.nrc = 'Requerido'
     if (!form.giroComercial.trim()) e.giroComercial = 'Requerido'
-    if (!form.direccion.trim()) e.direccion = 'Requerido'
+    if (!form.direccion.trim())     e.direccion = 'Requerido'
     return e
   }
 
@@ -59,44 +61,62 @@ export default function SetupEmpresa() {
         <div className="text-center mb-5">
           <h1 className="text-2xl font-bold text-sv-blue">FacturaSV</h1>
           <p className="text-gray-500 text-sm mt-1">Configure su empresa para comenzar</p>
-          <p className="text-xs text-gray-400 mt-0.5">Datos guardados solo en este dispositivo</p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          {f('nombre', 'Razón Social *', 'Mi Empresa S.A. de C.V.')}
-          {f('nombreComercial', 'Nombre comercial', 'Mi Tienda')}
-          {f('nit', 'NIT * (14 dígitos)', '0614-010123-101-1')}
-          {f('nrc', 'NRC *', '123456-7')}
-          {f('giroComercial', 'Giro comercial *', 'Venta de mercaderías')}
-          {f('codActividad', 'Código de actividad', '4711')}
-          {f('descActividad', 'Descripción actividad', 'Venta al por menor')}
-          {f('direccion', 'Dirección *', 'San Salvador')}
+          {f('nombre',          'Razón Social *',      'Mi Empresa S.A. de C.V.')}
+          {f('nombreComercial', 'Nombre comercial',     'Mi Tienda')}
+          {f('nit',             'NIT * (14 dígitos)',   '0614-010123-101-1')}
+          {f('nrc',             'NRC *',                '123456-7')}
+          {f('giroComercial',   'Giro comercial *',     'Venta de mercaderías')}
+          {f('codActividad',    'Código de actividad',  '4711')}
+          {f('descActividad',   'Descripción actividad','Venta al por menor')}
+          {f('direccion',       'Dirección *',          'San Salvador')}
 
           <div>
             <label className="text-xs font-medium text-gray-600">Departamento</label>
-            <select
-              className="input-field mt-0.5"
-              value={form.departamento}
-              onChange={(e) => setForm((s) => ({ ...s, departamento: e.target.value }))}
-            >
-              {DEPARTAMENTOS.map((d) => (
-                <option key={d.code} value={d.code}>{d.name}</option>
-              ))}
+            <select className="input-field mt-0.5" value={form.departamento}
+              onChange={(e) => setForm((s) => ({ ...s, departamento: e.target.value }))}>
+              {DEPARTAMENTOS.map((d) => <option key={d.code} value={d.code}>{d.name}</option>)}
             </select>
           </div>
 
           {f('telefono', 'Teléfono', '2222-3333')}
-          {f('correo', 'Correo', 'facturacion@miempresa.com')}
+          {f('correo',   'Correo',   'facturacion@miempresa.com')}
 
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={form.esGranContribuyente}
-              onChange={(e) => setForm((s) => ({ ...s, esGranContribuyente: e.target.checked }))}
-              className="w-4 h-4"
-            />
+            <input type="checkbox" checked={form.esGranContribuyente} className="w-4 h-4"
+              onChange={(e) => setForm((s) => ({ ...s, esGranContribuyente: e.target.checked }))} />
             Somos Gran Contribuyente
           </label>
+
+          {/* Selector de ambiente */}
+          <div className="mt-1">
+            <p className="text-xs font-medium text-gray-600 mb-1">Ambiente DTE</p>
+            <div className="flex gap-2">
+              <button type="button"
+                onClick={() => setForm((s) => ({ ...s, ambiente: '00' }))}
+                className={`flex-1 py-2 rounded-xl text-sm font-medium border-2 transition-colors ${
+                  form.ambiente === '00'
+                    ? 'bg-amber-50 border-amber-400 text-amber-700'
+                    : 'border-gray-200 text-gray-500'
+                }`}>
+                ⚠️ Pruebas
+              </button>
+              <button type="button"
+                onClick={() => setForm((s) => ({ ...s, ambiente: '01' }))}
+                className={`flex-1 py-2 rounded-xl text-sm font-medium border-2 transition-colors ${
+                  form.ambiente === '01'
+                    ? 'bg-green-50 border-green-500 text-green-700'
+                    : 'border-gray-200 text-gray-500'
+                }`}>
+                ✅ Producción
+              </button>
+            </div>
+            {form.ambiente === '00' && (
+              <p className="text-xs text-amber-600 mt-1">Los documentos en ambiente de pruebas no tienen validez fiscal.</p>
+            )}
+          </div>
 
           <button type="submit" className="btn-primary mt-2">Guardar y comenzar</button>
         </form>

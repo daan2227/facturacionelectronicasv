@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { sharePDF, downloadPDF } from '../lib/pdfShare'
+import { sharePDF, previewPDF, downloadPDF, downloadJSON } from '../lib/pdfShare'
 
 interface Props {
   blob: Blob
@@ -9,6 +9,7 @@ interface Props {
   total: number
   tipoDte: string
   numeroControl: string
+  jsonDte?: unknown
   onClose: () => void
 }
 
@@ -16,9 +17,10 @@ const TIPO_LABEL: Record<string, string> = {
   '01': 'Factura', '03': 'Crédito Fiscal', '05': 'Nota de Crédito', '06': 'Nota de Débito',
 }
 
-export default function ShareSheet({ blob, filename, receptor, correoReceptor, total, tipoDte, numeroControl, onClose }: Props) {
-  const [busy, setBusy] = useState(false)
+export default function ShareSheet({ blob, filename, receptor, correoReceptor, total, tipoDte, numeroControl, jsonDte, onClose }: Props) {
+  const [busy, setBusy] = useState<string | null>(null)
   const tipoLabel = TIPO_LABEL[tipoDte] ?? tipoDte
+  const jsonFilename = filename.replace('.pdf', '-DTE.json')
 
   const resumen = [
     `🧾 *${tipoLabel}*`,
@@ -27,68 +29,28 @@ export default function ShareSheet({ blob, filename, receptor, correoReceptor, t
     `N° Control: ${numeroControl}`,
   ].join('\n')
 
-  const run = async (fn: () => Promise<void>) => {
-    setBusy(true)
-    try { await fn() } finally { setBusy(false) }
+  const run = async (id: string, fn: () => Promise<void>) => {
+    setBusy(id)
+    try { await fn() } catch (e) {
+      const msg = (e as Error).message
+      if (!msg.includes('cancel') && !msg.includes('abort')) alert(`Error: ${msg}`)
+    } finally { setBusy(null) }
   }
 
-  // Compartir PDF con selector nativo de Android (WhatsApp, Gmail, Drive…)
-  const handleShare = () => run(() =>
-    sharePDF(blob, filename, `${tipoLabel} — ${receptor}`, resumen)
-  )
-
-  // Descargar PDF al dispositivo
-  const handleDownload = () => run(() => downloadPDF(blob, filename))
-
-  // WhatsApp: descarga el PDF primero, luego abre WA con texto
-  const handleWhatsApp = async () => {
-    setBusy(true)
-    try {
-      await downloadPDF(blob, filename)
-      const url = `https://wa.me/?text=${encodeURIComponent(resumen + '\n\n(PDF descargado en su dispositivo)')}`
-      window.open(url, '_blank')
-    } finally { setBusy(false) }
-  }
-
-  // WhatsApp directo al número del cliente
-  const handleWhatsAppDirect = async () => {
-    const tel = prompt('Número WhatsApp del cliente (ej. 71234567):')
-    if (!tel) return
-    setBusy(true)
-    try {
-      await downloadPDF(blob, filename)
-      const clean = tel.replace(/\D/g, '')
-      const number = clean.startsWith('503') ? clean : `503${clean}`
-      window.open(`https://wa.me/${number}?text=${encodeURIComponent(resumen)}`, '_blank')
-    } finally { setBusy(false) }
-  }
-
-  // Correo: abre app de email con datos prellenados
-  const handleEmail = async () => {
-    setBusy(true)
-    try {
-      await downloadPDF(blob, filename)
-      const to = correoReceptor ? encodeURIComponent(correoReceptor) : ''
-      const subject = encodeURIComponent(`${tipoLabel} — ${receptor}`)
-      const body = encodeURIComponent(
-        `Estimado/a cliente,\n\nAdjunto encontrará su ${tipoLabel} por $${total.toFixed(2)}.\n\n${resumen}\n\nSaludos.`
-      )
-      window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank')
-    } finally { setBusy(false) }
-  }
+  const btn = (id: string) => busy === id
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50" onClick={onClose}>
       <div
-        className="bg-white rounded-t-3xl shadow-2xl p-5 flex flex-col gap-4 max-w-lg mx-auto w-full"
+        className="bg-white rounded-t-3xl shadow-2xl p-5 flex flex-col gap-3 max-w-lg mx-auto w-full"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto" />
 
-        {/* Resumen */}
+        {/* Resumen del documento */}
         <div className="bg-blue-50 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-2xl">✅</span>
+            <span className="text-xl">✅</span>
             <span className="font-bold text-sv-blue">{tipoLabel} emitida</span>
           </div>
           <p className="font-medium text-gray-700">{receptor}</p>
@@ -96,55 +58,104 @@ export default function ShareSheet({ blob, filename, receptor, correoReceptor, t
           <p className="text-xs text-gray-400 font-mono mt-0.5 break-all">{numeroControl}</p>
         </div>
 
-        <p className="text-xs text-center text-gray-400 uppercase tracking-wide font-medium">Enviar documento</p>
-
-        {/* Acción principal: selector nativo Android */}
+        {/* Acción principal — selector nativo */}
         <button
-          onClick={handleShare}
-          disabled={busy}
-          className="flex items-center justify-center gap-3 bg-sv-blue text-white rounded-2xl py-4 font-semibold text-base disabled:opacity-60"
+          onClick={() => run('share', () => sharePDF(blob, filename, `${tipoLabel} — ${receptor}`, resumen))}
+          disabled={!!busy}
+          className="flex items-center justify-center gap-3 bg-sv-blue text-white rounded-2xl py-3.5 font-semibold disabled:opacity-60"
         >
-          <span className="text-2xl">📤</span>
+          <span className="text-xl">📤</span>
           <div className="text-left">
-            <p>{busy ? 'Preparando PDF…' : 'Compartir PDF'}</p>
+            <p>{btn('share') ? 'Preparando…' : 'Compartir PDF'}</p>
             <p className="text-xs opacity-75 font-normal">WhatsApp · Gmail · Drive · Telegram…</p>
           </div>
         </button>
 
-        {/* Acciones secundarias */}
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={handleWhatsApp} disabled={busy}
-            className="flex flex-col items-center gap-1 bg-green-500 text-white rounded-2xl py-3 disabled:opacity-60">
+        {/* Grid 3 columnas */}
+        <div className="grid grid-cols-3 gap-2">
+
+          {/* Ver PDF */}
+          <button
+            onClick={() => run('preview', () => previewPDF(blob, filename))}
+            disabled={!!busy}
+            className="flex flex-col items-center gap-1 bg-indigo-600 text-white rounded-2xl py-3 disabled:opacity-60"
+          >
+            <span className="text-xl">📄</span>
+            <span className="text-xs font-semibold">{btn('preview') ? '…' : 'Ver PDF'}</span>
+          </button>
+
+          {/* WhatsApp nuevo chat */}
+          <button
+            onClick={() => run('wa', async () => {
+              await downloadPDF(blob, filename)
+              const url = `https://wa.me/?text=${encodeURIComponent(resumen + '\n(PDF en sus descargas)')}`
+              window.open(url, '_blank')
+            })}
+            disabled={!!busy}
+            className="flex flex-col items-center gap-1 bg-green-500 text-white rounded-2xl py-3 disabled:opacity-60"
+          >
             <span className="text-xl">💬</span>
-            <span className="text-sm font-semibold">WhatsApp</span>
-            <span className="text-xs opacity-80">Nuevo chat</span>
+            <span className="text-xs font-semibold">{btn('wa') ? '…' : 'WhatsApp'}</span>
           </button>
 
-          <button onClick={handleWhatsAppDirect} disabled={busy}
-            className="flex flex-col items-center gap-1 bg-green-700 text-white rounded-2xl py-3 disabled:opacity-60">
+          {/* WhatsApp directo */}
+          <button
+            onClick={() => run('wad', async () => {
+              const tel = prompt('Número del cliente (ej. 71234567):')
+              if (!tel) return
+              await downloadPDF(blob, filename)
+              const clean = tel.replace(/\D/g, '')
+              const num = clean.startsWith('503') ? clean : `503${clean}`
+              window.open(`https://wa.me/${num}?text=${encodeURIComponent(resumen)}`, '_blank')
+            })}
+            disabled={!!busy}
+            className="flex flex-col items-center gap-1 bg-green-700 text-white rounded-2xl py-3 disabled:opacity-60"
+          >
             <span className="text-xl">📱</span>
-            <span className="text-sm font-semibold">WA directo</span>
-            <span className="text-xs opacity-80">Al cliente</span>
+            <span className="text-xs font-semibold">{btn('wad') ? '…' : 'WA directo'}</span>
           </button>
 
-          <button onClick={handleEmail} disabled={busy}
-            className="flex flex-col items-center gap-1 bg-gray-600 text-white rounded-2xl py-3 disabled:opacity-60">
+          {/* Correo */}
+          <button
+            onClick={() => run('email', async () => {
+              await downloadPDF(blob, filename)
+              const to = correoReceptor ? encodeURIComponent(correoReceptor) : ''
+              const sub = encodeURIComponent(`${tipoLabel} — ${receptor}`)
+              const body = encodeURIComponent(`Estimado/a cliente,\n\nAdjunto su ${tipoLabel} por $${total.toFixed(2)}.\n\n${resumen}`)
+              window.open(`mailto:${to}?subject=${sub}&body=${body}`, '_blank')
+            })}
+            disabled={!!busy}
+            className="flex flex-col items-center gap-1 bg-gray-600 text-white rounded-2xl py-3 disabled:opacity-60"
+          >
             <span className="text-xl">✉️</span>
-            <span className="text-sm font-semibold">Correo</span>
-            <span className="text-xs opacity-80">
-              {correoReceptor ? correoReceptor.slice(0, 16) + '…' : 'Abrir email'}
-            </span>
+            <span className="text-xs font-semibold">{btn('email') ? '…' : 'Correo'}</span>
+            {correoReceptor && <span className="text-xs opacity-70 max-w-full truncate px-1">{correoReceptor}</span>}
           </button>
 
-          <button onClick={handleDownload} disabled={busy}
-            className="flex flex-col items-center gap-1 border-2 border-gray-200 text-gray-700 rounded-2xl py-3 disabled:opacity-60">
+          {/* Descargar PDF */}
+          <button
+            onClick={() => run('dl', () => downloadPDF(blob, filename))}
+            disabled={!!busy}
+            className="flex flex-col items-center gap-1 border-2 border-gray-200 text-gray-700 rounded-2xl py-3 disabled:opacity-60"
+          >
             <span className="text-xl">⬇️</span>
-            <span className="text-sm font-semibold">Descargar</span>
-            <span className="text-xs text-gray-400">Guardar PDF</span>
+            <span className="text-xs font-semibold">{btn('dl') ? '…' : 'Bajar PDF'}</span>
           </button>
+
+          {/* Exportar JSON DTE */}
+          {jsonDte && (
+            <button
+              onClick={() => run('json', () => downloadJSON(jsonDte, jsonFilename))}
+              disabled={!!busy}
+              className="flex flex-col items-center gap-1 border-2 border-orange-200 text-orange-700 rounded-2xl py-3 disabled:opacity-60"
+            >
+              <span className="text-xl">📂</span>
+              <span className="text-xs font-semibold">{btn('json') ? '…' : 'JSON DTE'}</span>
+            </button>
+          )}
         </div>
 
-        <button onClick={onClose} className="w-full py-3 text-gray-500 text-sm border border-gray-200 rounded-2xl">
+        <button onClick={onClose} className="w-full py-2.5 text-gray-500 text-sm border border-gray-200 rounded-2xl">
           Listo — ir al inicio
         </button>
       </div>

@@ -23,6 +23,7 @@ interface EmitidoData {
   total: number
   tipoDte: string
   numeroControl: string
+  jsonDte: DTEPayload
 }
 
 export default function NuevoDocumento() {
@@ -38,7 +39,7 @@ export default function NuevoDocumento() {
     return {
       identificacion: {
         version: 3,
-        ambiente: '00',
+        ambiente: empresa.ambiente ?? '00',  // usa ambiente de la empresa
         tipoDte: draft.tipoDte,
         numeroControl,
         codigoGeneracion: draft.codigoGeneracion,
@@ -82,7 +83,6 @@ export default function NuevoDocumento() {
       const numeroControl = nextNumeroControl(draft.tipoDte)
       const dte = buildDTE(numeroControl)
 
-      // Guardar en localStorage
       saveDocumento({
         tipoDte: dte.identificacion.tipoDte,
         numeroControl: dte.identificacion.numeroControl,
@@ -103,11 +103,9 @@ export default function NuevoDocumento() {
         jsonDte: dte,
       })
 
-      // Generar PDF como blob
       const blob = await pdf(<InvoicePDF dte={dte} />).toBlob()
       const filename = `${dte.identificacion.tipoDte}-${dte.identificacion.codigoGeneracion.slice(0, 8)}.pdf`
 
-      // Mostrar panel de compartir
       setEmitido({
         blob,
         filename,
@@ -116,17 +114,13 @@ export default function NuevoDocumento() {
         total: draft.totals.totalPagar,
         tipoDte: draft.tipoDte,
         numeroControl,
+        jsonDte: dte,
       })
 
       resetDraft()
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleCloseShare = () => {
-    setEmitido(null)
-    navigate('/')
   }
 
   return (
@@ -144,6 +138,13 @@ export default function NuevoDocumento() {
           ))}
         </div>
 
+        {/* Indicador de ambiente */}
+        {empresa.ambiente === '00' && (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl px-3 py-2 text-xs text-amber-700 text-center">
+            ⚠️ Ambiente de <strong>Pruebas</strong> — cambie en Ajustes para emitir documentos reales
+          </div>
+        )}
+
         {step === 0 && <TipoDteSelector onNext={() => setStep(1)} />}
         {step === 1 && <ReceptorForm onNext={() => setStep(2)} />}
         {step === 2 && <ItemsForm onNext={() => setStep(3)} onBack={() => setStep(1)} />}
@@ -151,19 +152,21 @@ export default function NuevoDocumento() {
           <div className="flex flex-col gap-4">
             <TotalesSummary />
             <div className="flex gap-3">
-              <button onClick={() => setStep(2)} className="flex-1 border border-gray-300 rounded-xl py-2 text-sm">
-                ← Atrás
-              </button>
+              <button onClick={() => setStep(2)} className="flex-1 border border-gray-300 rounded-xl py-2 text-sm">← Atrás</button>
               <button onClick={handleEmitir} disabled={loading} className="flex-1 btn-primary bg-green-600">
-                {loading ? 'Generando PDF...' : '✅ Emitir'}
+                {loading ? 'Generando…' : '✅ Emitir'}
               </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Panel de compartir — aparece al emitir */}
-      {emitido && <ShareSheet {...emitido} onClose={handleCloseShare} />}
+      {emitido && (
+        <ShareSheet
+          {...emitido}
+          onClose={() => { setEmitido(null); navigate('/') }}
+        />
+      )}
     </>
   )
 }
