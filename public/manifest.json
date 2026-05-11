@@ -1,0 +1,14 @@
+{
+  "name": "FacturaSV",
+  "short_name": "FacturaSV",
+  "description": "Facturas y DTEs electrónicos para El Salvador",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0F3F8C",
+  "theme_color": "#0F3F8C",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
