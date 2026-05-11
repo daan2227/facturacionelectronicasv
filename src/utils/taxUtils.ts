@@ -4,10 +4,10 @@ export const IVA_RATE = 0.13
 export const RETENCION_RATE = 0.01
 
 export function calcTotals(items: LineItem[], esGranContribuyente: boolean): InvoiceTotals {
-  const totalGravada = items.reduce((acc, i) => acc + i.ventaGravada, 0)
-  const totalExenta = items.reduce((acc, i) => acc + i.ventaExenta, 0)
-  const totalNoSuj = items.reduce((acc, i) => acc + i.ventaNoSuj, 0)
-  const totalDescu = items.reduce((acc, i) => acc + i.montoDescu, 0)
+  const totalGravada = round2(items.reduce((acc, i) => acc + i.ventaGravada, 0))
+  const totalExenta = round2(items.reduce((acc, i) => acc + i.ventaExenta, 0))
+  const totalNoSuj = round2(items.reduce((acc, i) => acc + i.ventaNoSuj, 0))
+  const totalDescu = round2(items.reduce((acc, i) => acc + i.montoDescu, 0))
 
   const iva = round2(totalGravada * IVA_RATE)
   const retencion1 = esGranContribuyente ? round2(totalGravada * RETENCION_RATE) : 0
@@ -28,7 +28,7 @@ export function calcTotals(items: LineItem[], esGranContribuyente: boolean): Inv
 }
 
 function round2(n: number) {
-  return Math.round(n * 100) / 100
+  return Math.round((n + Number.EPSILON) * 100) / 100
 }
 
 // ─── Conversión de monto a letras (dólares, requerido por Hacienda) ────────────
@@ -76,7 +76,8 @@ export function validarNIT(nit: string): boolean {
   const factors = [2, 7, 6, 5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
   const sum = clean.slice(0, 13).split('').reduce((acc, d, i) => acc + parseInt(d) * factors[i], 0)
   const mod = sum % 11
-  const dv = mod > 1 ? 11 - mod : mod
+  // When mod <= 1 the check digit is 0, not mod
+  const dv = mod > 1 ? 11 - mod : 0
   return dv === parseInt(clean[13])
 }
 
