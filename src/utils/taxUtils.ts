@@ -72,13 +72,21 @@ export function validarNIT(nit: string): boolean {
   const clean = nit.replace(/[-\s]/g, '')
   if (clean.length !== 14) return false
   if (!/^\d{14}$/.test(clean)) return false
-  // Dígito verificador posición 14
-  const factors = [2, 7, 6, 5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
-  const sum = clean.slice(0, 13).split('').reduce((acc, d, i) => acc + parseInt(d) * factors[i], 0)
+
+  const digits = clean.split('').map(Number)
+
+  // El Salvador uses two algorithms depending on taxpayer type:
+  // Persona Natural (first digit = 0): first factor = 2
+  // Persona Jurídica / company (first digit != 0): first factor = 3
+  const f0 = digits[0] === 0 ? 2 : 3
+  const factors = [f0, 7, 6, 5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
+
+  const sum = digits.slice(0, 13).reduce((acc, d, i) => acc + d * factors[i], 0)
   const mod = sum % 11
-  // When mod <= 1 the check digit is 0, not mod
-  const dv = mod > 1 ? 11 - mod : 0
-  return dv === parseInt(clean[13])
+  // mod=0 → dv=0, mod=1 → dv=1, mod>1 → dv=11-mod
+  const dv = mod > 1 ? 11 - mod : mod
+
+  return dv === digits[13]
 }
 
 export function validarDUI(dui: string): boolean {
