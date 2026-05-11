@@ -1,6 +1,5 @@
 /**
  * Motor de almacenamiento local — reemplaza Supabase.
- * Todos los datos viven en localStorage del navegador.
  */
 import { v4 as uuidv4 } from 'uuid'
 
@@ -10,16 +9,14 @@ function read<T>(key: string): T | null {
   try {
     const raw = localStorage.getItem(PREFIX + key)
     return raw ? (JSON.parse(raw) as T) : null
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
 function write<T>(key: string, value: T): void {
   localStorage.setItem(PREFIX + key, JSON.stringify(value))
 }
 
-// ─── Empresa ───────────────────────────────────────────────────
+// ─── Empresa ──────────────────────────────────────────────────
 export interface EmpresaData {
   id: string
   nit: string
@@ -37,10 +34,13 @@ export interface EmpresaData {
   correo: string
   esGranContribuyente: boolean
   correlativoActual: number
+  ambiente: '00' | '01'
 }
 
 export function getEmpresa(): EmpresaData | null {
-  return read<EmpresaData>('empresa')
+  const data = read<EmpresaData>('empresa')
+  if (!data) return null
+  return { ambiente: '00', ...data } // retrocompatibilidad
 }
 
 export function saveEmpresa(data: Omit<EmpresaData, 'id' | 'correlativoActual'>): EmpresaData {
@@ -63,7 +63,7 @@ export function nextNumeroControl(tipoDte: string): string {
   return `DTE-${tipoDte}-C0010000-${String(correlativo).padStart(15, '0')}`
 }
 
-// ─── Clientes ──────────────────────────────────────────────────
+// ─── Clientes ────────────────────────────────────────────────
 export interface ClienteData {
   id: string
   createdAt: string
@@ -79,9 +79,7 @@ export interface ClienteData {
   esGranContribuyente: boolean
 }
 
-export function getClientes(): ClienteData[] {
-  return read<ClienteData[]>('clientes') ?? []
-}
+export function getClientes(): ClienteData[] { return read<ClienteData[]>('clientes') ?? [] }
 
 export function saveCliente(data: Omit<ClienteData, 'id' | 'createdAt'>): ClienteData {
   const clientes = getClientes()
@@ -95,7 +93,7 @@ export function deleteCliente(id: string): void {
   write('clientes', getClientes().filter((c) => c.id !== id))
 }
 
-// ─── Documentos ────────────────────────────────────────────────
+// ─── Documentos ───────────────────────────────────────────────
 export interface DocumentoData {
   id: string
   createdAt: string
@@ -107,7 +105,7 @@ export interface DocumentoData {
   fechaEmision: string
   horaEmision: string
   condicionOperacion: number
-  receptor: string          // nombre del cliente
+  receptor: string
   totalGravada: number
   totalExenta: number
   totalNoSuj: number
@@ -118,9 +116,7 @@ export interface DocumentoData {
   jsonDte: unknown
 }
 
-export function getDocumentos(): DocumentoData[] {
-  return read<DocumentoData[]>('documentos') ?? []
-}
+export function getDocumentos(): DocumentoData[] { return read<DocumentoData[]>('documentos') ?? [] }
 
 export function saveDocumento(data: Omit<DocumentoData, 'id' | 'createdAt'>): DocumentoData {
   const docs = getDocumentos()
@@ -131,13 +127,12 @@ export function saveDocumento(data: Omit<DocumentoData, 'id' | 'createdAt'>): Do
 }
 
 export function anularDocumento(id: string): void {
-  const docs = getDocumentos().map((d) =>
+  write('documentos', getDocumentos().map((d) =>
     d.id === id ? { ...d, estado: 'anulado' as const } : d
-  )
-  write('documentos', docs)
+  ))
 }
 
-// ─── Backup / Restaurar ───────────────────────────────────────────
+// ─── Backup ───────────────────────────────────────────────────
 export function exportBackup(): string {
   return JSON.stringify({
     empresa: getEmpresa(),
