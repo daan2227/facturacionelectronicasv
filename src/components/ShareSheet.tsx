@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { sharePDF, downloadPDF } from '../lib/pdfShare'
 
-interface ShareSheetProps {
+interface Props {
   blob: Blob
   filename: string
   receptor: string
@@ -15,174 +16,135 @@ const TIPO_LABEL: Record<string, string> = {
   '01': 'Factura', '03': 'Crédito Fiscal', '05': 'Nota de Crédito', '06': 'Nota de Débito',
 }
 
-export default function ShareSheet({
-  blob, filename, receptor, correoReceptor, total, tipoDte, numeroControl, onClose,
-}: ShareSheetProps) {
-  const [sharing, setSharing] = useState(false)
+export default function ShareSheet({ blob, filename, receptor, correoReceptor, total, tipoDte, numeroControl, onClose }: Props) {
+  const [busy, setBusy] = useState(false)
   const tipoLabel = TIPO_LABEL[tipoDte] ?? tipoDte
-  const canShareFiles = !!(navigator.share && navigator.canShare)
 
-  const resumenTexto = [
-    `📄 *${tipoLabel}*`,
+  const resumen = [
+    `🧾 *${tipoLabel}*`,
     `Cliente: ${receptor}`,
     `Total: *$${total.toFixed(2)}*`,
     `N° Control: ${numeroControl}`,
-    `Emitida por FacturaSV`,
   ].join('\n')
 
-  // Compartir el archivo PDF via selector nativo de Android
-  const handleShareFile = async () => {
-    setSharing(true)
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true)
+    try { await fn() } finally { setBusy(false) }
+  }
+
+  // Compartir PDF con selector nativo de Android (WhatsApp, Gmail, Drive…)
+  const handleShare = () => run(() =>
+    sharePDF(blob, filename, `${tipoLabel} — ${receptor}`, resumen)
+  )
+
+  // Descargar PDF al dispositivo
+  const handleDownload = () => run(() => downloadPDF(blob, filename))
+
+  // WhatsApp: descarga el PDF primero, luego abre WA con texto
+  const handleWhatsApp = async () => {
+    setBusy(true)
     try {
-      const file = new File([blob], filename, { type: 'application/pdf' })
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          title: `${tipoLabel} - ${receptor}`,
-          text: resumenTexto,
-          files: [file],
-        })
-      } else {
-        // Fallback: solo texto + descargar el archivo
-        await navigator.share({ title: `${tipoLabel} - ${receptor}`, text: resumenTexto })
-        handleDownload()
-      }
-    } catch (e) {
-      if ((e as Error).name !== 'AbortError') handleDownload()
-    } finally {
-      setSharing(false)
-    }
+      await downloadPDF(blob, filename)
+      const url = `https://wa.me/?text=${encodeURIComponent(resumen + '\n\n(PDF descargado en su dispositivo)')}`
+      window.open(url, '_blank')
+    } finally { setBusy(false) }
   }
 
-  // WhatsApp: envía el texto; el usuario adjunta el PDF desde su galería/descargas
-  const handleWhatsApp = () => {
-    handleDownload() // descarga primero para que el usuario tenga el PDF
-    const url = `https://wa.me/?text=${encodeURIComponent(resumenTexto + '\n\n(PDF adjunto descargado en su dispositivo)')}`
-    window.open(url, '_blank')
+  // WhatsApp directo al número del cliente
+  const handleWhatsAppDirect = async () => {
+    const tel = prompt('Número WhatsApp del cliente (ej. 71234567):')
+    if (!tel) return
+    setBusy(true)
+    try {
+      await downloadPDF(blob, filename)
+      const clean = tel.replace(/\D/g, '')
+      const number = clean.startsWith('503') ? clean : `503${clean}`
+      window.open(`https://wa.me/${number}?text=${encodeURIComponent(resumen)}`, '_blank')
+    } finally { setBusy(false) }
   }
 
-  // WhatsApp a número específico del receptor
-  const handleWhatsAppDirect = (tel: string) => {
-    const clean = tel.replace(/\D/g, '')
-    const number = clean.startsWith('503') ? clean : `503${clean}`
-    handleDownload()
-    const url = `https://wa.me/${number}?text=${encodeURIComponent(resumenTexto)}`
-    window.open(url, '_blank')
-  }
-
-  // Email: abre app de correo con datos prellenados
-  const handleEmail = () => {
-    const subject = encodeURIComponent(`${tipoLabel} - ${receptor}`)
-    const body = encodeURIComponent(
-      `Estimado/a cliente,\n\nAdjunto encontrará su ${tipoLabel} por un total de $${total.toFixed(2)}.\n\n${resumenTexto}\n\nSaludos,`
-    )
-    const to = correoReceptor ? encodeURIComponent(correoReceptor) : ''
-    window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank')
-    // El PDF se descarga para que el usuario lo adjunte manualmente
-    handleDownload()
-  }
-
-  // Descarga directa del PDF
-  const handleDownload = () => {
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
+  // Correo: abre app de email con datos prellenados
+  const handleEmail = async () => {
+    setBusy(true)
+    try {
+      await downloadPDF(blob, filename)
+      const to = correoReceptor ? encodeURIComponent(correoReceptor) : ''
+      const subject = encodeURIComponent(`${tipoLabel} — ${receptor}`)
+      const body = encodeURIComponent(
+        `Estimado/a cliente,\n\nAdjunto encontrará su ${tipoLabel} por $${total.toFixed(2)}.\n\n${resumen}\n\nSaludos.`
+      )
+      window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank')
+    } finally { setBusy(false) }
   }
 
   return (
-    // Overlay oscuro
-    <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose}>
-      {/* Panel inferior */}
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40" onClick={onClose}>
       <div
         className="bg-white rounded-t-3xl shadow-2xl p-5 flex flex-col gap-4 max-w-lg mx-auto w-full"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Indicador de arrastre */}
-        <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto" />
+        <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto" />
 
-        {/* Resumen del documento */}
+        {/* Resumen */}
         <div className="bg-blue-50 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-2xl">✅</span>
-            <span className="font-bold text-sv-blue text-lg">{tipoLabel} emitida</span>
+            <span className="font-bold text-sv-blue">{tipoLabel} emitida</span>
           </div>
-          <p className="text-sm text-gray-700 font-medium">{receptor}</p>
-          <p className="text-2xl font-bold text-gray-900 mt-0.5">${total.toFixed(2)}</p>
-          <p className="text-xs text-gray-400 mt-0.5 font-mono">{numeroControl}</p>
+          <p className="font-medium text-gray-700">{receptor}</p>
+          <p className="text-2xl font-bold text-gray-900">${total.toFixed(2)}</p>
+          <p className="text-xs text-gray-400 font-mono mt-0.5 break-all">{numeroControl}</p>
         </div>
 
-        <p className="text-xs text-gray-500 text-center font-medium uppercase tracking-wide">Compartir documento</p>
+        <p className="text-xs text-center text-gray-400 uppercase tracking-wide font-medium">Enviar documento</p>
 
-        {/* Botones de compartir */}
+        {/* Acción principal: selector nativo Android */}
+        <button
+          onClick={handleShare}
+          disabled={busy}
+          className="flex items-center justify-center gap-3 bg-sv-blue text-white rounded-2xl py-4 font-semibold text-base disabled:opacity-60"
+        >
+          <span className="text-2xl">📤</span>
+          <div className="text-left">
+            <p>{busy ? 'Preparando PDF…' : 'Compartir PDF'}</p>
+            <p className="text-xs opacity-75 font-normal">WhatsApp · Gmail · Drive · Telegram…</p>
+          </div>
+        </button>
+
+        {/* Acciones secundarias */}
         <div className="grid grid-cols-2 gap-3">
-          {/* Compartir nativo (WhatsApp, Gmail, Drive, etc.) */}
-          {canShareFiles && (
-            <button
-              onClick={handleShareFile}
-              disabled={sharing}
-              className="flex flex-col items-center gap-1.5 bg-sv-blue text-white rounded-2xl py-4 px-3 col-span-2"
-            >
-              <span className="text-2xl">📤</span>
-              <span className="font-semibold text-sm">
-                {sharing ? 'Preparando...' : 'Compartir PDF'}
-              </span>
-              <span className="text-xs opacity-75">WhatsApp · Gmail · Drive · etc.</span>
-            </button>
-          )}
-
-          {/* WhatsApp */}
-          <button
-            onClick={handleWhatsApp}
-            className="flex flex-col items-center gap-1.5 bg-green-500 text-white rounded-2xl py-4 px-3"
-          >
-            <span className="text-2xl">💬</span>
-            <span className="font-semibold text-sm">WhatsApp</span>
-            <span className="text-xs opacity-80">Texto + PDF</span>
+          <button onClick={handleWhatsApp} disabled={busy}
+            className="flex flex-col items-center gap-1 bg-green-500 text-white rounded-2xl py-3 disabled:opacity-60">
+            <span className="text-xl">💬</span>
+            <span className="text-sm font-semibold">WhatsApp</span>
+            <span className="text-xs opacity-80">Nuevo chat</span>
           </button>
 
-          {/* Correo */}
-          <button
-            onClick={handleEmail}
-            className="flex flex-col items-center gap-1.5 bg-gray-700 text-white rounded-2xl py-4 px-3"
-          >
-            <span className="text-2xl">✉️</span>
-            <span className="font-semibold text-sm">Correo</span>
+          <button onClick={handleWhatsAppDirect} disabled={busy}
+            className="flex flex-col items-center gap-1 bg-green-700 text-white rounded-2xl py-3 disabled:opacity-60">
+            <span className="text-xl">📱</span>
+            <span className="text-sm font-semibold">WA directo</span>
+            <span className="text-xs opacity-80">Al cliente</span>
+          </button>
+
+          <button onClick={handleEmail} disabled={busy}
+            className="flex flex-col items-center gap-1 bg-gray-600 text-white rounded-2xl py-3 disabled:opacity-60">
+            <span className="text-xl">✉️</span>
+            <span className="text-sm font-semibold">Correo</span>
             <span className="text-xs opacity-80">
-              {correoReceptor ? correoReceptor.slice(0, 18) + '…' : 'Abrir email'}
+              {correoReceptor ? correoReceptor.slice(0, 16) + '…' : 'Abrir email'}
             </span>
           </button>
 
-          {/* Descargar PDF */}
-          <button
-            onClick={handleDownload}
-            className="flex flex-col items-center gap-1.5 border-2 border-gray-200 text-gray-700 rounded-2xl py-4 px-3"
-          >
-            <span className="text-2xl">⬇️</span>
-            <span className="font-semibold text-sm">Descargar</span>
+          <button onClick={handleDownload} disabled={busy}
+            className="flex flex-col items-center gap-1 border-2 border-gray-200 text-gray-700 rounded-2xl py-3 disabled:opacity-60">
+            <span className="text-xl">⬇️</span>
+            <span className="text-sm font-semibold">Descargar</span>
             <span className="text-xs text-gray-400">Guardar PDF</span>
-          </button>
-
-          {/* WhatsApp a número del receptor (si tiene teléfono) */}
-          <button
-            onClick={() => {
-              const tel = prompt('Número WhatsApp del cliente (ej. 71234567):')
-              if (tel) handleWhatsAppDirect(tel)
-            }}
-            className="flex flex-col items-center gap-1.5 border-2 border-green-200 text-green-700 rounded-2xl py-4 px-3"
-          >
-            <span className="text-2xl">📱</span>
-            <span className="font-semibold text-sm">WA directo</span>
-            <span className="text-xs text-gray-400">Al número del cliente</span>
           </button>
         </div>
 
-        {/* Cerrar */}
-        <button
-          onClick={onClose}
-          className="w-full py-3 text-gray-500 text-sm font-medium border border-gray-200 rounded-2xl"
-        >
+        <button onClick={onClose} className="w-full py-3 text-gray-500 text-sm border border-gray-200 rounded-2xl">
           Listo — ir al inicio
         </button>
       </div>
